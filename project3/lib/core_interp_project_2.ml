@@ -3,7 +3,6 @@
  * N. Danner
  *)
 
-module Ast = Core_ast
 
 (* Raised when a function body terminates without executing `return`.
  *)

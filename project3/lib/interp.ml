@@ -1,8 +1,8 @@
 (* COMP 324 Project 3:  C- interpreter with dynamic security enforcement.
  *
- * N. Danner
+ * Saakshi Challa, Caroline Tracy, Siiso Daauud
  *)
-
+ 
 (* Raised when a function body terminates without executing `return`.
  *)
 exception NoReturn of Ast.Id.t
@@ -131,19 +131,32 @@ end = struct
   (* eq x y = true,  if x and y are the same security label
    *          false, otherwise.
    *)
-  let eq (_ : t) (_ : t) : bool =
-    failwith "Unimplemented:  SecLab.eq"
+  let eq (x: t) (y : t) : bool =
+    match (x, y) with 
+    | (Low, Low) -> true
+    | (High, High) -> true
+    | (Low, High) -> false 
+    | (High, Low) -> false
 
   (* leq x y = true,  eq x y or x = Low and y = High
    *           false, o/w.
    *)
-  let leq (_ : t) (_ : t) : bool =
-    failwith "Unimplemented:  SecLab.leq"
+  let leq (x : t) (y : t) : bool =
+    match (x, y) with 
+    | (Low, Low) -> true 
+    | (High, High) -> true 
+    | (Low, High) -> true 
+    | (High, Low) -> false 
 
   (* join x y = the maximum of x and y with respect to `leq`.
    *)
-  let join (_ : t) (_ : t) : t =
-    failwith "Unimplemented:  SecLab.join"
+  let join (x : t) (y : t) : t =
+    match (x, y) with 
+    | (Low, Low) -> Low 
+    | (Low, High) -> High 
+    | (High, Low) -> High 
+    | (High, High) -> High 
+    
 
   (* [of_channel ch] = the security label associated to the channel [ch].
    *)
@@ -258,8 +271,172 @@ module Io = struct
 
 end
 
+module Frame = struct
+  type t =
+    | Envs of Env.t
+    | Return of PrimValue.t
+end
+
+
 (* exec p:  Execute the program `p`.
  *)
-let exec (_ : Ast.Prog.t) : unit =
-  failwith "Unimplemented:  exec"
+let exec (p : Ast.Prog.t) : unit =
+  match p with
+  | Ast.Prog.Pgm fundefs ->
+    let rho0 =
+      Env.empty
+      |> fun rho -> Env.declare rho "stdin" PrimValue.V_None
+      |> fun rho -> Env.declare rho "stdout" PrimValue.V_None
+      |> fun rho -> Env.declare rho "stdout_hi" PrimValue.V_None 
+      |> fun rho -> Env.declare rho "stdout_lo" PrimValue.V_None
+      |> fun rho -> Env.declare rho "stdin_hi" PrimValue.V_None
+      |> fun rho -> Env.declare rho "stdin_lo" PrimValue.V_None
+
+    in
+
+    let find_function (f : Ast.Id.t) : Ast.Prog.fundef =
+      match List.find_opt (fun (name, _, _) -> name = f) fundefs with
+      | Some fd -> fd
+      | None -> raise (UndefinedFunction f)
+    in
+
+    let rec eval (rho : Env.t) (e : Ast.Expr.t) : PrimValue.t =
+      match e with
+      | Ast.Expr.Num n -> PrimValue.V_Int n
+      | Ast.Expr.Bool b -> PrimValue.V_Bool b
+      | Ast.Expr.Var x -> Env.lookup rho x
+      | Ast.Expr.Str s -> PrimValue.V_Str s
+      | Ast.Expr.Unop (op, e1) -> 
+        let v = eval rho e1 in
+          unop op v
+      | Ast.Expr.Binop (op, e1, e2) ->
+        let v1 = eval rho e1 in
+        let v2 = eval rho e2 in
+        binop op v1 v2
+      
+      | Ast.Expr.Call (f, args) ->
+        if String.equal f "fprintf" then
+          match args with
+          | _file :: fmt :: rest ->
+              (match eval rho fmt with
+              | PrimValue.V_Str s ->
+                  let vs = List.map (eval rho) rest in
+                  Io.do_fprintf s vs;
+                  PrimValue.V_None
+              | _ -> raise (TypeError "fprintf format must be string"))
+          | _ -> raise (TypeError "fprintf expects (file, format, ...)")
+
+        else
+          let (_, params, body) = find_function f in
+          if List.length params <> List.length args then
+            raise (TypeError "Wrong number of arguments");
+          let arg_values = List.map (eval rho) args in
+          let param_env =
+            List.fold_left2
+              (fun env param v -> Env.declare env param v)
+              Env.empty
+              params
+              arg_values
+          in
+          let frame =
+            List.fold_left
+            (fun (frame : Frame.t) (stmt : Ast.Stm.t) ->
+              match frame with
+              | Frame.Return _ -> frame
+              | Frame.Envs env -> exec_stmnt env stmt)
+            (Frame.Envs param_env)
+              body
+          in
+          match frame with
+          | Frame.Return v -> v
+          | Frame.Envs _ -> raise (NoReturn f)
+
+    and exec_stmnt (rho : Env.t) (s : Ast.Stm.t) : Frame.t =
+      (match s with
+
+      | Ast.Stm.VarDec vars ->
+          let env' =
+            List.fold_left
+              (fun env (x, init_opt) ->
+                match init_opt with
+                | None ->
+                    Env.declare env x PrimValue.V_Undefined
+                | Some e ->
+                    let v = eval env e in
+                    Env.declare env x v
+              )
+              rho
+              vars
+          in
+          Frame.Envs env'
+
+      | Ast.Stm.Assign (x, e) ->
+          let v = eval rho e in
+          let env' = Env.assign rho x v in
+          Frame.Envs env'
+
+      | Ast.Stm.Expr e ->
+          let _ = eval rho e in
+          Frame.Envs rho
+
+      | Ast.Stm.Block stms ->
+          let rho' = Env.push rho in
+          let rec exec_block env ss =
+            match ss with
+            | [] -> Frame.Envs env
+            | s :: rest ->
+                let frame = exec_stmnt env s in
+                match frame with
+                | Frame.Return _ -> frame
+                | Frame.Envs env' -> exec_block env' rest
+          in
+          let frame = exec_block rho' stms in
+          (match frame with
+          | Frame.Return v ->
+              Frame.Return v
+          | Frame.Envs env ->
+              let rho_final = Env.pop env in
+              Frame.Envs rho_final)
+
+      | Ast.Stm.IfElse (cond, s1, s2) ->
+          (match eval rho cond with
+          | PrimValue.V_Bool true -> exec_stmnt rho s1
+          | PrimValue.V_Bool false -> exec_stmnt rho s2
+          | _ -> raise (TypeError "Condition must be boolean"))
+
+      | Ast.Stm.While (cond, body) ->
+          let rec loop env =
+            match eval env cond with
+            | PrimValue.V_Bool true ->
+              let frame = exec_stmnt env body in
+              (match frame with
+              | Frame.Return _ -> frame
+              | Frame.Envs env -> loop env)
+            | PrimValue.V_Bool false ->
+                Frame.Envs env
+            | _ ->
+                raise (TypeError "While condition must be boolean")
+          in
+          loop rho
+
+      | Ast.Stm.Return None ->
+          Frame.Return PrimValue.V_None
+
+      | Ast.Stm.Return (Some e) ->
+          let v = eval rho e in
+          Frame.Return v
+
+      | Ast.Stm.Fscanf (_, fmt, x) ->
+          let v = Io.do_fscanf fmt in
+          let env' = Env.assign rho x v in
+          Frame.Envs env'
+      )
+
+    in 
+
+    let _ = eval rho0 (Ast.Expr.Call ("main", [])) in
+    ()
+
+
+
 
