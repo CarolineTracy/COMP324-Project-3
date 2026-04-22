@@ -1,24 +1,50 @@
-/*!tests!
- *
- * {
- *    "input":      [],
- *    "output":     ["4"]
- * }
- *
- */
+import * as Hammer from "hammerjs";
 
-int f (char* a, bool b, int c) {
-    return d + 8239 ;
-}
+export default Hammer;
+export {
+  INPUT_START,
+	INPUT_MOVE,
+	INPUT_END,
+	INPUT_CANCEL,
+	STATE_POSSIBLE,
+	STATE_BEGAN,
+	STATE_CHANGED,
+	STATE_ENDED,
+	STATE_RECOGNIZED,
+	STATE_CANCELLED,
+	STATE_FAILED,
 
-void main() {
-    int x = 4 ;
-    fprintf(stdout, "%d\n", x) ;
-    return ;
-    int y = 10, u = 82, k = 2 ;
-    y = u % k ;
-    while (true) {
-        y = y + 1 ;
-        return 7 ;
-    }
-}
+	DIRECTION_NONE,
+	DIRECTION_LEFT,
+	DIRECTION_RIGHT,
+	DIRECTION_UP,
+	DIRECTION_DOWN,
+	DIRECTION_HORIZONTAL,
+	DIRECTION_VERTICAL,
+	DIRECTION_ALL,
+	Manager,
+	Input,
+	TouchAction,
+	TouchInput,
+	MouseInput,
+	PointerEventInput,
+	TouchMouseInput,
+	SingleTouchInput,
+	Recognizer,
+	AttrRecognizer,
+	Tap,
+	Pan,
+	Swipe,
+	Pinch,
+	Rotate,
+	Press,
+	on,
+	off,
+	each,
+	merge,
+	extend,
+	inherit,
+	bindFn,
+	prefixed,
+	defaults,
+} from "hammerjs";
