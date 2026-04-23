@@ -2,7 +2,7 @@
  *
  * Saakshi Challa, Caroline Tracy, Siiso Daauud
  *)
- 
+
 (* Raised when a function body terminates without executing `return`.
  *)
 exception NoReturn of Ast.Id.t
@@ -59,42 +59,6 @@ module PrimValue = struct
     | V_Bool b -> Bool.to_string b
     | V_Str s -> s
 end
-(*  binop op v v' = v'', where v'' is the result of applying the semantic
- *  denotation of `op` to `v` and `v''`.
- *)
-let binop (op : Ast.Expr.binop) (v : PrimValue.t) (v' : PrimValue.t) : PrimValue.t =
-  match (op, v, v') with
-  | (Ast.Expr.Plus, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n + n')
-  | (Ast.Expr.Minus, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n - n')
-  | (Ast.Expr.Times, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n * n')
-  | (Ast.Expr.Div, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n / n')
-  | (Ast.Expr.Mod, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n mod n')
-  | (Ast.Expr.And, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b && b')
-  | (Ast.Expr.Or, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b || b')
-  | (Ast.Expr.Eq, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n = n')
-  | (Ast.Expr.Eq, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b = b')
-  | (Ast.Expr.Ne, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n != n')
-  | (Ast.Expr.Ne, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b != b')
-  | (Ast.Expr.Lt, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n < n')
-  | (Ast.Expr.Lt, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b < b')
-  | (Ast.Expr.Le, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n <= n')
-  | (Ast.Expr.Le, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b <= b')
-  | (Ast.Expr.Gt, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n > n')
-  | (Ast.Expr.Gt, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b > b')
-  | (Ast.Expr.Ge, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n >= n')
-  | (Ast.Expr.Ge, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b >= b')
-  | _ -> raise(TypeError "Binary operation (binop) applied to operands of the incorrect type.")
-
-(*  unop op v = v', where v' is the result of applying the semantic
- *  denotation of `op` to `v`.
- *)
-let unop (op : Ast.Expr.unop) (v : PrimValue.t) : PrimValue.t =
-  match (op, v) with
-  | (Ast.Expr.Neg, PrimValue.V_Int n) -> PrimValue.V_Int (-n)
-  | (Ast.Expr.Not, PrimValue.V_Bool b) -> PrimValue.V_Bool (not b)
-  | _ -> raise(TypeError "Unary operation (unop) applied to operand of the incorrect type.")
-
-
 
 (* Security labels.
  *
@@ -194,6 +158,7 @@ end = struct
     | (High, High) -> High 
     
 
+
   (* [of_channel ch] = the security label associated to the channel [ch].
    *)
   let of_channel (ch : Ast.Id.t) : t =
@@ -203,61 +168,6 @@ end = struct
     | ("stdout_hi" | "stdin_hi") -> High
     | _ -> invalid_arg ch
 
-end
-
-
-(* Module for environments. We will use ρ as a metavariable over environments.
- *)
-module Env = struct
-
-  type env = (Ast.Id.t * (PrimValue.t * SecLab.t)) list
-  type t = env list
-
-  let empty : t = [[]]
-
-  let from_list (rho : t) : t = rho
-
-  let push (rho : t) : t =
-    [] :: rho
-
-  let pop (rho : t) : t =
-    match rho with
-    | [] -> failwith "pop on empty environment stack"
-    | _ :: rest -> rest
-
-  let rec lookup (rho : t) (x : Ast.Id.t) : PrimValue.t * SecLab.t =
-    match rho with
-    | [] -> raise (UnboundVariable x)
-    | scope :: rest ->
-        match List.assoc_opt x scope with
-        | Some v -> v
-        | None -> lookup rest x
-
-  let declare (rho : t) (x : Ast.Id.t) (v : PrimValue.t * SecLab.t) : t =
-    match rho with
-    | [] -> failwith "declare on empty environment stack"
-    | scope :: rest ->
-        if List.mem_assoc x scope then
-          raise (MultipleDeclaration x)
-        else
-          ((x, v) :: scope) :: rest
-
-  let rec assign (rho : t) (x : Ast.Id.t) (v : PrimValue.t * SecLab.t) : t =
-    match rho with
-    | [] -> raise (UnboundVariable x)
-    | scope :: rest ->
-        if List.mem_assoc x scope then
-          ((x, v) :: List.remove_assoc x scope) :: rest
-        else
-          scope :: assign rest x v
-
-end
-
-(* Added security label to the return value*)
-module Frame = struct
-  type t =
-    | Envs of Env.t
-    | Return of PrimValue.t * SecLab.t
 end
 
 (* Module for input/output built-in functions.
@@ -362,13 +272,106 @@ module Io = struct
 
 end
 
+(* Create a module to track the security level of each value throughout the program's execution*)
+
+module Value = struct 
+  type t = PrimValue.t * SecLab.t
+end 
+
+(* Module for environments. We will use ρ as a metavariable over environments.
+ *)
+module Env = struct
+
+  type env = (Ast.Id.t * Value.t) list
+  type t = env list
+
+  let empty : t = [[]]
+
+  let from_list (rho : t) : t = rho
+
+  let push (rho : t) : t =
+    [] :: rho
+
+  let pop (rho : t) : t =
+    match rho with
+    | [] -> failwith "pop on empty environment stack"
+    | _ :: rest -> rest
+
+  let rec lookup (rho : t) (x : Ast.Id.t) : Value.t =
+    match rho with
+    | [] -> raise (UnboundVariable x)
+    | scope :: rest ->
+        match List.assoc_opt x scope with
+        | Some v -> v
+        | None -> lookup rest x
+
+  let declare (rho : t) (x : Ast.Id.t) (v : Value.t) : t =
+    match rho with
+    | [] -> failwith "declare on empty environment stack"
+    | scope :: rest ->
+        if List.mem_assoc x scope then
+          raise (MultipleDeclaration x)
+        else
+          ((x, v) :: scope) :: rest
+
+  let rec assign (rho : t) (x : Ast.Id.t) (v : Value.t) : t =
+    match rho with
+    | [] -> raise (UnboundVariable x)
+    | scope :: rest ->
+        if List.mem_assoc x scope then
+          ((x, v) :: List.remove_assoc x scope) :: rest
+        else
+          scope :: assign rest x v
+
+end
+
+module Frame = struct
+  type t =
+    | Envs of Env.t
+    | Return of Value.t
+end
+
+(*  binop op v v' = v'', where v'' is the result of applying the semantic
+ *  denotation of `op` to `v` and `v''`.
+ *)
+let binop (op : Ast.Expr.binop) (v : PrimValue.t) (v' : PrimValue.t) : PrimValue.t =
+  match (op, v, v') with
+  | (Ast.Expr.Plus, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n + n')
+  | (Ast.Expr.Minus, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n - n')
+  | (Ast.Expr.Times, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n * n')
+  | (Ast.Expr.Div, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n / n')
+  | (Ast.Expr.Mod, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Int (n mod n')
+  | (Ast.Expr.And, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b && b')
+  | (Ast.Expr.Or, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b || b')
+  | (Ast.Expr.Eq, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n = n')
+  | (Ast.Expr.Eq, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b = b')
+  | (Ast.Expr.Ne, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n != n')
+  | (Ast.Expr.Ne, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b != b')
+  | (Ast.Expr.Lt, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n < n')
+  | (Ast.Expr.Lt, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b < b')
+  | (Ast.Expr.Le, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n <= n')
+  | (Ast.Expr.Le, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b <= b')
+  | (Ast.Expr.Gt, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n > n')
+  | (Ast.Expr.Gt, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b > b')
+  | (Ast.Expr.Ge, PrimValue.V_Int n, PrimValue.V_Int n') -> PrimValue.V_Bool (n >= n')
+  | (Ast.Expr.Ge, PrimValue.V_Bool b, PrimValue.V_Bool b') -> PrimValue.V_Bool (b >= b')
+  | _ -> raise(TypeError "Binary operation (binop) applied to operands of the incorrect type.")
+
+(*  unop op v = v', where v' is the result of applying the semantic
+ *  denotation of `op` to `v`.
+ *)
+let unop (op : Ast.Expr.unop) (v : PrimValue.t) : PrimValue.t =
+  match (op, v) with
+  | (Ast.Expr.Neg, PrimValue.V_Int n) -> PrimValue.V_Int (-n)
+  | (Ast.Expr.Not, PrimValue.V_Bool b) -> PrimValue.V_Bool (not b)
+  | _ -> raise(TypeError "Unary operation (unop) applied to operand of the incorrect type.")
+
 
 
 
 (* exec p:  Execute the program `p`.
  *)
 let exec (p : Ast.Prog.t) : unit =
-
   match p with
   | Ast.Prog.Pgm fundefs ->
     let rho0 =
@@ -388,6 +391,7 @@ let exec (p : Ast.Prog.t) : unit =
       | None -> raise (UndefinedFunction f)
     in
 
+<<<<<<< HEAD
     let rec eval (rho : Env.t) (e : Ast.Expr.t) : PrimValue.t * SecLab.t =
       match e with
       | Ast.Expr.Num n -> (PrimValue.V_Int n , SecLab.bottom) 
@@ -401,11 +405,30 @@ let exec (p : Ast.Prog.t) : unit =
         let (v1 , label1) = eval rho e1 in
         let (v2 , label2) = eval rho e2 in
         (binop op v1 v2 , SecLab.join label1 label2)
+=======
+    (* eval rho sc e = value of expression in enivronment rho and security context, sc. this returns a Value.t (PrimeValue.t * SecLab.t)*)
+    let rec eval (rho : Env.t) (sc : SecLab.t) (e : Ast.Expr.t) : Value.t =
+      match e with
+      | Ast.Expr.Num n -> (PrimValue.V_Int n, sc) 
+      | Ast.Expr.Bool b -> (PrimValue.V_Bool b, sc) 
+      (*variables get their stored label joined with security context*)
+      | Ast.Expr.Var x -> 
+        let (v, lbl) = Env.lookup rho x in (v, SecLab.join lbl sc)
+      | Ast.Expr.Str s -> (PrimValue.V_Str s, sc) 
+      | Ast.Expr.Unop (op, e1) -> 
+        let (v, lbl) = eval rho sc e1 in
+          (unop op v, lbl)
+      | Ast.Expr.Binop (op, e1, e2) ->
+        let (v1, lbl1) = eval rho sc e1 in
+        let (v2, lbl2) = eval rho sc e2 in
+        (binop op v1 v2, SecLab.join lbl1 lbl2)
+>>>>>>> f7562bb (updated interp)
       
       | Ast.Expr.Call (f, args) ->
         if String.equal f "fprintf" then
           match args with
           | _file :: fmt :: rest ->
+<<<<<<< HEAD
               (*get channel name from the file argument*)
               let ch = (match _file with 
                 | Ast.Expr.Var ch -> ch
@@ -416,13 +439,24 @@ let exec (p : Ast.Prog.t) : unit =
               |  (PrimValue.V_Str s, _) -> (* accounts for the tuple return with a security label*)
                   let vs = List.map (eval rho) rest in
                   (* check that no value is more secret than the channel allows *)
+=======
+            (*get chanel name and security label*)
+            let ch = (match _file with 
+              | Ast.Expr.Var ch -> ch 
+              | _ -> raise (TypeError "fprintf first arg must be a channel")) in 
+            let ch_label = SecLab.of_channel ch in 
+              (match eval rho sc fmt with
+              | (PrimValue.V_Str s, _) ->
+                  let vs = List.map (eval rho sc) rest in
+                  (*if high value is printed to a low channel, raise SecurityError *)
+>>>>>>> f7562bb (updated interp)
                   List.iter (fun (_, lbl) -> 
                     if not (SecLab.leq lbl ch_label) then 
                       raise SecurityError) vs; 
-                  (* strip labels before passing to do fprintf *)
+                  (*strip lables before passing to fprintf*)
                   let vs1 = List.map (fun (v, _) -> v) vs in 
                   Io.do_fprintf s vs1;
-                  (* return None with a public label *)
+                  (*return none with the current security context label*)
                   (PrimValue.V_None, SecLab.bottom) 
               | _ -> raise (TypeError "fprintf format must be string"))
           | _ -> raise (TypeError "fprintf expects (file, format, ...)")
@@ -449,10 +483,16 @@ let exec (p : Ast.Prog.t) : unit =
               body
           in
           match frame with
-          | Frame.Return (v, lbl) -> (v, lbl) 
+          | Frame.Return v -> v
           | Frame.Envs _ -> raise (NoReturn f)
 
+<<<<<<< HEAD
     and exec_stmnt (rho : Env.t) (s : Ast.Stm.t) : Frame.t =
+=======
+    (* frame resulting from executing statement s in environment rho and security context sc*)
+
+    and exec_stmnt (rho : Env.t) (sc : SecLab.t) (s : Ast.Stm.t) : Frame.t =
+>>>>>>> f7562bb (updated interp)
       (match s with
 
       | Ast.Stm.VarDec vars ->
@@ -470,9 +510,14 @@ let exec (p : Ast.Prog.t) : unit =
               vars
           in
           Frame.Envs env'
-
+      (*assign: NSU check, we cannot assign in a high security context *)
       | Ast.Stm.Assign (x, e) ->
+<<<<<<< HEAD
           let v = eval rho e in
+=======
+          if not (SecLab.leq sc SecLab.bottom) then raise NSU_Error; 
+          let v = eval rho sc e in
+>>>>>>> f7562bb (updated interp)
           let env' = Env.assign rho x v in
           Frame.Envs env'
 
@@ -493,13 +538,16 @@ let exec (p : Ast.Prog.t) : unit =
           in
           let frame = exec_block rho' stms in
           (match frame with
-          | Frame.Return (v, lbl) ->
-              Frame.Return (v, lbl)
+          | Frame.Return v ->
+              Frame.Return v
           | Frame.Envs env ->
               let rho_final = Env.pop env in
               Frame.Envs rho_final)
-
+      
+      (*IfElse: branches execute at the security level of the condition
+       If the condition is high, both branches execute in high context which prevents any assignments or returns that could leak information about which branch was taken*)
       | Ast.Stm.IfElse (cond, s1, s2) ->
+<<<<<<< HEAD
         (match eval rho cond with
           (* if condition is true, check NSU before executing true branch  *)
           | (PrimValue.V_Bool true , lbl)   -> 
@@ -541,10 +589,43 @@ let exec (p : Ast.Prog.t) : unit =
           let (v, lbl) = eval rho e in
           Frame.Return (v, lbl)
 
+=======
+          (match eval rho sc cond with
+          | (PrimValue.V_Bool true, lbl) -> exec_stmnt rho lbl s1
+          | (PrimValue.V_Bool false, lbl) -> exec_stmnt rho lbl s2
+          | _ -> raise (TypeError "Condition must be boolean"))
+      (*While: body executes at the security level of the condition*)
+      | Ast.Stm.While (cond, body) ->
+          let rec loop env =
+            match eval env sc cond with
+            | (PrimValue.V_Bool true, lbl) ->
+              let frame = exec_stmnt env lbl body in
+              (match frame with
+              | Frame.Return _ -> frame
+              | Frame.Envs env1 -> loop env1)
+            | (PrimValue.V_Bool false, _) ->
+                Frame.Envs env
+            | _ ->
+                raise (TypeError "While condition must be boolean")
+          in
+          loop rho
+      
+          (*NSU check - cannot return in high security context*)
+      | Ast.Stm.Return None ->
+          if not (SecLab.leq sc SecLab.bottom) then raise NSU_Error; 
+          Frame.Return (PrimValue.V_None, sc) 
+
+      | Ast.Stm.Return (Some e) ->
+          if not (SecLab.leq sc SecLab.bottom) then raise NSU_Error; 
+          let v = eval rho sc e in
+          Frame.Return v
+      (*Fscanf: tagging value with security label of input channel. Values read from a high security channel are labeled High, so they cannot later be printed to a public channel.
+       NSU check: we cannot read input in a high security context. *)
+>>>>>>> f7562bb (updated interp)
       | Ast.Stm.Fscanf (file, fmt, x) ->
-          let v = Io.do_fscanf fmt in
-          (* tag the value with the security label of the input channel *)
           let lbl = SecLab.of_channel file in 
+          if not (SecLab.leq sc lbl) then raise NSU_Error; 
+          let v = Io.do_fscanf fmt in
           let env' = Env.assign rho x (v, lbl) in
           Frame.Envs env'
       )
@@ -553,5 +634,7 @@ let exec (p : Ast.Prog.t) : unit =
 
     let _ = eval rho0 (Ast.Expr.Call ("main", [])) in
     ()
+
+
 
 
