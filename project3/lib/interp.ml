@@ -391,21 +391,6 @@ let exec (p : Ast.Prog.t) : unit =
       | None -> raise (UndefinedFunction f)
     in
 
-<<<<<<< HEAD
-    let rec eval (rho : Env.t) (e : Ast.Expr.t) : PrimValue.t * SecLab.t =
-      match e with
-      | Ast.Expr.Num n -> (PrimValue.V_Int n , SecLab.bottom) 
-      | Ast.Expr.Bool b -> (PrimValue.V_Bool b , SecLab.bottom) 
-      | Ast.Expr.Var x -> Env.lookup rho x
-      | Ast.Expr.Str s -> (PrimValue.V_Str s , SecLab.bottom) 
-      | Ast.Expr.Unop (op, e1) -> 
-        let (v , label) = eval rho e1 in
-          (unop op v , label)
-      | Ast.Expr.Binop (op, e1, e2) ->
-        let (v1 , label1) = eval rho e1 in
-        let (v2 , label2) = eval rho e2 in
-        (binop op v1 v2 , SecLab.join label1 label2)
-=======
     (* eval rho sc e = value of expression in enivronment rho and security context, sc. this returns a Value.t (PrimeValue.t * SecLab.t)*)
     let rec eval (rho : Env.t) (sc : SecLab.t) (e : Ast.Expr.t) : Value.t =
       match e with
@@ -422,24 +407,11 @@ let exec (p : Ast.Prog.t) : unit =
         let (v1, lbl1) = eval rho sc e1 in
         let (v2, lbl2) = eval rho sc e2 in
         (binop op v1 v2, SecLab.join lbl1 lbl2)
->>>>>>> f7562bb (updated interp)
       
       | Ast.Expr.Call (f, args) ->
         if String.equal f "fprintf" then
           match args with
           | _file :: fmt :: rest ->
-<<<<<<< HEAD
-              (*get channel name from the file argument*)
-              let ch = (match _file with 
-                | Ast.Expr.Var ch -> ch
-                | _ -> raise (TypeError "fprintf first arg must be a channel")) in 
-              (* get the security label of the output channel *)
-              let ch_label = SecLab.of_channel ch in 
-              (match eval rho fmt with
-              |  (PrimValue.V_Str s, _) -> (* accounts for the tuple return with a security label*)
-                  let vs = List.map (eval rho) rest in
-                  (* check that no value is more secret than the channel allows *)
-=======
             (*get chanel name and security label*)
             let ch = (match _file with 
               | Ast.Expr.Var ch -> ch 
@@ -449,7 +421,6 @@ let exec (p : Ast.Prog.t) : unit =
               | (PrimValue.V_Str s, _) ->
                   let vs = List.map (eval rho sc) rest in
                   (*if high value is printed to a low channel, raise SecurityError *)
->>>>>>> f7562bb (updated interp)
                   List.iter (fun (_, lbl) -> 
                     if not (SecLab.leq lbl ch_label) then 
                       raise SecurityError) vs; 
@@ -465,7 +436,7 @@ let exec (p : Ast.Prog.t) : unit =
           let (_, params, body) = find_function f in
           if List.length params <> List.length args then
             raise (TypeError "Wrong number of arguments");
-          let arg_values = List.map (eval rho) args in
+          let arg_values = List.map (eval rho sc) args in
           let param_env =
             List.fold_left2
               (fun env param v -> Env.declare env param v)
@@ -478,7 +449,7 @@ let exec (p : Ast.Prog.t) : unit =
             (fun (frame : Frame.t) (stmt : Ast.Stm.t) ->
               match frame with
               | Frame.Return _ -> frame
-              | Frame.Envs env -> exec_stmnt env stmt)
+              | Frame.Envs env -> exec_stmnt env sc stmt)
             (Frame.Envs param_env)
               body
           in
@@ -486,13 +457,9 @@ let exec (p : Ast.Prog.t) : unit =
           | Frame.Return v -> v
           | Frame.Envs _ -> raise (NoReturn f)
 
-<<<<<<< HEAD
-    and exec_stmnt (rho : Env.t) (s : Ast.Stm.t) : Frame.t =
-=======
     (* frame resulting from executing statement s in environment rho and security context sc*)
 
     and exec_stmnt (rho : Env.t) (sc : SecLab.t) (s : Ast.Stm.t) : Frame.t =
->>>>>>> f7562bb (updated interp)
       (match s with
 
       | Ast.Stm.VarDec vars ->
@@ -503,7 +470,7 @@ let exec (p : Ast.Prog.t) : unit =
                 | None ->
                     Env.declare env x (PrimValue.V_Undefined, SecLab.bottom) 
                 | Some e ->
-                    let v = eval env e in
+                    let v = eval env sc e in
                     Env.declare env x v
               )
               rho
@@ -512,17 +479,13 @@ let exec (p : Ast.Prog.t) : unit =
           Frame.Envs env'
       (*assign: NSU check, we cannot assign in a high security context *)
       | Ast.Stm.Assign (x, e) ->
-<<<<<<< HEAD
-          let v = eval rho e in
-=======
           if not (SecLab.leq sc SecLab.bottom) then raise NSU_Error; 
           let v = eval rho sc e in
->>>>>>> f7562bb (updated interp)
           let env' = Env.assign rho x v in
           Frame.Envs env'
 
       | Ast.Stm.Expr e ->
-          let _ = eval rho e in
+          let _ = eval rho sc e in
           Frame.Envs rho
 
       | Ast.Stm.Block stms ->
@@ -531,7 +494,7 @@ let exec (p : Ast.Prog.t) : unit =
             match ss with
             | [] -> Frame.Envs env
             | s :: rest ->
-                let frame = exec_stmnt env s in
+                let frame = exec_stmnt env sc s in
                 match frame with
                 | Frame.Return _ -> frame
                 | Frame.Envs env' -> exec_block env' rest
@@ -547,49 +510,6 @@ let exec (p : Ast.Prog.t) : unit =
       (*IfElse: branches execute at the security level of the condition
        If the condition is high, both branches execute in high context which prevents any assignments or returns that could leak information about which branch was taken*)
       | Ast.Stm.IfElse (cond, s1, s2) ->
-<<<<<<< HEAD
-        (match eval rho cond with
-          (* if condition is true, check NSU before executing true branch  *)
-          | (PrimValue.V_Bool true , lbl)   -> 
-            (* if condition came from a secret channel, raise NSU error  *)
-            (if not (SecLab.leq lbl SecLab.bottom) then raise NSU_Error;
-             exec_stmnt rho (match s1 with Ast.Stm.Block _ -> s1 | _ -> Ast.Stm.Block [s1]))
-            (* if condition is false, check NSU before executing false branch *)
-          | (PrimValue.V_Bool false , lbl) -> 
-            (*if condition came from a secret channel, raise NSU error *)
-            (if not (SecLab.leq lbl SecLab.bottom) then raise NSU_Error;
-             exec_stmnt rho (match s2 with Ast.Stm.Block _ -> s2 | _ -> Ast.Stm.Block [s2]))
-          | _ -> raise (TypeError "Condition must be boolean"))
-
-        | Ast.Stm.While (cond, body) ->
-          (match body with
-          | Ast.Stm.Block _ ->
-              let rec loop env =
-                match eval env cond with
-                | (PrimValue.V_Bool true, lbl) ->
-                  if not (SecLab.leq lbl SecLab.bottom) then raise NSU_Error; 
-                  let frame = exec_stmnt env body in
-                  (match frame with
-                  | Frame.Return _ -> frame
-                  | Frame.Envs env1 -> loop env1)
-                | (PrimValue.V_Bool false, lbl) ->
-                    if not (SecLab.leq lbl SecLab.bottom) then raise NSU_Error; 
-                    Frame.Envs env
-                | _ ->
-                    raise (TypeError "While condition must be boolean")
-              in
-              loop rho
-          | _ ->
-              raise (TypeError "While body must be a block"))
-
-      | Ast.Stm.Return None ->
-          Frame.Return (PrimValue.V_None, SecLab.bottom) 
-
-      | Ast.Stm.Return (Some e) ->
-          let (v, lbl) = eval rho e in
-          Frame.Return (v, lbl)
-
-=======
           (match eval rho sc cond with
           | (PrimValue.V_Bool true, lbl) -> exec_stmnt rho lbl s1
           | (PrimValue.V_Bool false, lbl) -> exec_stmnt rho lbl s2
@@ -621,7 +541,6 @@ let exec (p : Ast.Prog.t) : unit =
           Frame.Return v
       (*Fscanf: tagging value with security label of input channel. Values read from a high security channel are labeled High, so they cannot later be printed to a public channel.
        NSU check: we cannot read input in a high security context. *)
->>>>>>> f7562bb (updated interp)
       | Ast.Stm.Fscanf (file, fmt, x) ->
           let lbl = SecLab.of_channel file in 
           if not (SecLab.leq sc lbl) then raise NSU_Error; 
@@ -632,7 +551,7 @@ let exec (p : Ast.Prog.t) : unit =
 
     in 
 
-    let _ = eval rho0 (Ast.Expr.Call ("main", [])) in
+    let _ = eval rho0 SecLab.bottom (Ast.Expr.Call ("main", [])) in
     ()
 
 
