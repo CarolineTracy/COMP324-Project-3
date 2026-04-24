@@ -508,29 +508,36 @@ let exec (p : Ast.Prog.t) : unit =
               Frame.Envs rho_final)
       
       (*IfElse: branches execute at the security level of the condition
-       If the condition is high, both branches execute in high context which prevents any assignments or returns that could leak information about which branch was taken*)
+        If the condition is high, both branches execute in high context which prevents any assignments or returns that could leak information about which branch was taken*)
       | Ast.Stm.IfElse (cond, s1, s2) ->
           (match eval rho sc cond with
-          | (PrimValue.V_Bool true, lbl) -> exec_stmnt rho lbl s1
-          | (PrimValue.V_Bool false, lbl) -> exec_stmnt rho lbl s2
+          | (PrimValue.V_Bool true, lbl) ->
+              exec_stmnt rho lbl (match s1 with Ast.Stm.Block _ -> s1 | _ -> Ast.Stm.Block [s1])
+          | (PrimValue.V_Bool false, lbl) ->
+              exec_stmnt rho lbl (match s2 with Ast.Stm.Block _ -> s2 | _ -> Ast.Stm.Block [s2])
           | _ -> raise (TypeError "Condition must be boolean"))
+
       (*While: body executes at the security level of the condition*)
       | Ast.Stm.While (cond, body) ->
-          let rec loop env =
-            match eval env sc cond with
-            | (PrimValue.V_Bool true, lbl) ->
-              let frame = exec_stmnt env lbl body in
-              (match frame with
-              | Frame.Return _ -> frame
-              | Frame.Envs env1 -> loop env1)
-            | (PrimValue.V_Bool false, _) ->
-                Frame.Envs env
-            | _ ->
-                raise (TypeError "While condition must be boolean")
-          in
-          loop rho
-      
-          (*NSU check - cannot return in high security context*)
+          (match body with
+          | Ast.Stm.Block _ ->
+              let rec loop env =
+                match eval env sc cond with
+                | (PrimValue.V_Bool true, lbl) ->
+                    let frame = exec_stmnt env lbl body in
+                    (match frame with
+                    | Frame.Return _ -> frame
+                    | Frame.Envs env1 -> loop env1)
+                | (PrimValue.V_Bool false, _) ->
+                    Frame.Envs env
+                | _ ->
+                    raise (TypeError "While condition must be boolean")
+              in
+              loop rho
+          | _ ->
+              raise (TypeError "While body must be a block"))
+
+      (*NSU check - cannot return in high security context*)
       | Ast.Stm.Return None ->
           if not (SecLab.leq sc SecLab.bottom) then raise NSU_Error; 
           Frame.Return (PrimValue.V_None, sc) 
